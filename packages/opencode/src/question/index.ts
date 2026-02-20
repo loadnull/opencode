@@ -57,6 +57,7 @@ export namespace Question {
     answers: z
       .array(Answer)
       .describe("User answers in order of questions (each answer is an array of selected labels)"),
+    agent: z.string().optional().describe("Switch to this agent after replying"),
   })
   export type Reply = z.infer<typeof Reply>
 
@@ -120,7 +121,7 @@ export namespace Question {
     })
   }
 
-  export async function reply(input: { requestID: string; answers: Answer[] }): Promise<void> {
+  export async function reply(input: { requestID: string; answers: Answer[] }): Promise<string | undefined> {
     const s = await state()
     const existing = s.pending[input.requestID]
     if (!existing) {
@@ -138,6 +139,7 @@ export namespace Question {
     })
 
     existing.resolve(input.answers)
+    return existing.info.sessionID
   }
 
   export async function reject(requestID: string): Promise<void> {

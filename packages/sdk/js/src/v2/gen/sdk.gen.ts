@@ -2025,6 +2025,7 @@ export class Question extends HeyApiClient {
       requestID: string
       directory?: string
       answers?: Array<QuestionAnswer>
+      agent?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2036,6 +2037,7 @@ export class Question extends HeyApiClient {
             { in: "path", key: "requestID" },
             { in: "query", key: "directory" },
             { in: "body", key: "answers" },
+            { in: "body", key: "agent" },
           ],
         },
       ],

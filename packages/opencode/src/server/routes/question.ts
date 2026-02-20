@@ -1,10 +1,43 @@
 import { Hono } from "hono"
 import { describeRoute, validator } from "hono-openapi"
 import { resolver } from "hono-openapi"
+import { Agent } from "../../agent/agent"
+import { Identifier } from "../../id/id"
+import { Provider } from "../../provider/provider"
 import { Question } from "../../question"
+import { Session } from "../../session"
+import { MessageV2 } from "../../session/message-v2"
 import z from "zod"
 import { errors } from "../error"
 import { lazy } from "../../util/lazy"
+
+async function model(sessionID: string) {
+  for await (const item of MessageV2.stream(sessionID)) {
+    if (item.info.role === "user" && item.info.model) return item.info.model
+  }
+  return Provider.defaultModel()
+}
+
+async function switchAgent(sessionID: string, agent: string) {
+  if (!(await Agent.get(agent))) return
+  const msg: MessageV2.User = {
+    id: Identifier.ascending("message"),
+    sessionID,
+    role: "user",
+    time: { created: Date.now() },
+    agent,
+    model: await model(sessionID),
+  }
+  await Session.updateMessage(msg)
+  await Session.updatePart({
+    id: Identifier.ascending("part"),
+    messageID: msg.id,
+    sessionID,
+    type: "text",
+    text: "User confirmed and switched to build agent. Continue working.",
+    synthetic: true,
+  } satisfies MessageV2.TextPart)
+}
 
 export const QuestionRoutes = lazy(() =>
   new Hono()
@@ -58,10 +91,11 @@ export const QuestionRoutes = lazy(() =>
       async (c) => {
         const params = c.req.valid("param")
         const json = c.req.valid("json")
-        await Question.reply({
+        const sessionID = await Question.reply({
           requestID: params.requestID,
           answers: json.answers,
         })
+        if (json.agent && sessionID) await switchAgent(sessionID, json.agent)
         return c.json(true)
       },
     )

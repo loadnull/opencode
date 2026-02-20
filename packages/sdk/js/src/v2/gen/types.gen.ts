@@ -4029,6 +4029,10 @@ export type QuestionReplyData = {
      * User answers in order of questions (each answer is an array of selected labels)
      */
     answers: Array<QuestionAnswer>
+    /**
+     * Switch to this agent after replying
+     */
+    agent?: string
   }
   path: {
     requestID: string

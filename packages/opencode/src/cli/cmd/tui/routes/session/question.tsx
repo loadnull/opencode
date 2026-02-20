@@ -9,16 +9,21 @@ import { useSDK } from "../../context/sdk"
 import { SplitBorder } from "../../component/border"
 import { useTextareaKeybindings } from "../../component/textarea-keybindings"
 import { useDialog } from "../../ui/dialog"
+import { useLocal } from "../../context/local"
 
 export function QuestionPrompt(props: { request: QuestionRequest }) {
   const sdk = useSDK()
   const { theme } = useTheme()
   const keybind = useKeybind()
   const bindings = useTextareaKeybindings()
+  const local = useLocal()
 
   const questions = createMemo(() => props.request.questions)
   const single = createMemo(() => questions().length === 1 && questions()[0]?.multiple !== true)
   const tabs = createMemo(() => (single() ? 1 : questions().length + 1)) // questions + confirm tab (no confirm for single select)
+  const canBuild = createMemo(
+    () => local.agent.current().name === "plan" && local.agent.list().some((a) => a.name === "build"),
+  )
   const [tabHover, setTabHover] = createSignal<number | "confirm" | null>(null)
   const [store, setStore] = createStore({
     tab: 0,
@@ -57,7 +62,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     })
   }
 
-  function pick(answer: string, custom: boolean = false) {
+  function pick(answer: string, custom: boolean = false, agent?: string) {
     const answers = [...store.answers]
     answers[store.tab] = [answer]
     setStore("answers", answers)
@@ -70,7 +75,9 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
       sdk.client.question.reply({
         requestID: props.request.id,
         answers: [[answer]],
+        agent,
       })
+      if (agent) local.agent.set(agent)
       return
     }
     setStore("tab", store.tab + 1)
@@ -97,7 +104,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     setStore("selected", 0)
   }
 
-  function selectOption() {
+  function selectOption(agent?: string) {
     if (other()) {
       if (!multi()) {
         setStore("editing", true)
@@ -117,7 +124,17 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
       toggle(opt.label)
       return
     }
-    pick(opt.label)
+    pick(opt.label, false, agent)
+  }
+
+  function submitAndBuild() {
+    const answers = questions().map((_, i) => store.answers[i] ?? [])
+    sdk.client.question.reply({
+      requestID: props.request.id,
+      answers,
+      agent: "build",
+    })
+    local.agent.set("build")
   }
 
   const dialog = useDialog()
@@ -181,7 +198,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
           return
         }
 
-        pick(text, true)
+        pick(text, true, evt.shift && canBuild() ? "build" : undefined)
         setStore("editing", false)
         return
       }
@@ -208,7 +225,8 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     if (confirm()) {
       if (evt.name === "return") {
         evt.preventDefault()
-        submit()
+        if (evt.shift && canBuild()) submitAndBuild()
+        else submit()
       }
       if (evt.name === "escape" || keybind.match("app_exit", evt)) {
         evt.preventDefault()
@@ -240,7 +258,8 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
 
       if (evt.name === "return") {
         evt.preventDefault()
-        selectOption()
+        if (evt.shift && single() && canBuild()) selectOption("build")
+        else selectOption()
       }
 
       if (evt.name === "escape" || keybind.match("app_exit", evt)) {
@@ -455,6 +474,13 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
               {confirm() ? "submit" : multi() ? "toggle" : single() ? "submit" : "confirm"}
             </span>
           </text>
+
+          <Show when={(confirm() || single()) && canBuild()}>
+            <text fg={theme.text}>
+              shift+enter <span style={{ fg: theme.textMuted }}>submit & </span>
+              <span style={{ fg: local.agent.color("build") }}>build</span>
+            </text>
+          </Show>
 
           <text fg={theme.text}>
             esc <span style={{ fg: theme.textMuted }}>dismiss</span>
